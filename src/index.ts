@@ -1,147 +1,83 @@
 #!/usr/bin/env node
 
-/**
- * This is an MCP server that provides access to the Australian Bureau of Statistics (ABS) Data API.
- * It demonstrates core MCP concepts by providing:
- * - ABS datasets as resources
- * - Tools for querying specific datasets
- * - Prompts for analyzing statistical data
- */
-
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
-  ListResourcesRequestSchema,
   ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 
-const ABS_API_BASE = "https://data.api.abs.gov.au/rest/data";
+// ABS API endpoints
+const ABS_API_BASE = "https://api.data.abs.gov.au";
 
-/**
- * Type definitions for ABS API responses
- */
-type DatasetMetadata = {
-  id: string;
-  title: string;
-  description: string;
-};
-
-type QueryParams = {
-  datasetId: string;
-  dimensions?: { [key: string]: string };
-  format?: "json" | "csv";
-};
-
-/**
- * Cache for dataset metadata to avoid repeated API calls
- */
-const datasetCache: { [id: string]: DatasetMetadata } = {};
-
-/**
- * Create an MCP server with capabilities for ABS data access
- */
-const server = new Server(
+// Example datasets we know exist
+const KNOWN_DATASETS = [
   {
-    name: "ABS MCP Server",
-    version: "0.1.0",
+    id: "ABS_ANNUAL_ERP_LGA2023",
+    title: "Regional Population by LGA (2023)",
+    description: "Estimated Resident Population by Local Government Area"
   },
   {
-    capabilities: {
-      resources: {},
-      tools: {},
-      prompts: {},
-    },
+    id: "ABS_C21_T01_LGA",
+    title: "2021 Census, Local Government Areas",
+    description: "Selected Person Characteristics by Local Government Area"
+  },
+  {
+    id: "ABS_REGIONAL_ASGS2016",
+    title: "Regional Statistics by ASGS 2016",
+    description: "Various indicators by Statistical Area Level 2 (SA2)"
   }
-);
+];
 
-/**
- * Fetch and cache dataset metadata from ABS API
- */
-async function fetchDatasets(): Promise<DatasetMetadata[]> {
-  try {
-    const response = await axios.get(`${ABS_API_BASE}/dataflows`);
-    const datasets = response.data.data.map((item: any) => ({
-      id: item.id,
-      title: item.name,
-      description: item.description || "No description available"
-    }));
-    
-    // Update cache
-    datasets.forEach((dataset: DatasetMetadata) => {
-      datasetCache[dataset.id] = dataset;
-    });
-    
-    return datasets;
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error("Error fetching datasets:", error.message);
-    }
-    return [];
+// Enable debug logging
+const debug = true;
+function log(...args: any[]) {
+  if (debug) {
+    console.error('[ABS MCP Server]', ...args);
   }
 }
 
-/**
- * Handler for listing available ABS datasets as resources
- */
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  const datasets = await fetchDatasets();
-  
-  return {
-    resources: datasets.map(dataset => ({
-      uri: `abs:///${dataset.id}`,
-      mimeType: "application/json",
-      name: dataset.title,
-      description: dataset.description
-    }))
-  };
-});
+// Define parameter types
+type QueryDatasetParams = {
+  datasetId: string;
+  dimensions?: Record<string, string>;
+  format?: "json" | "csv";
+};
 
-/**
- * Handler for reading specific dataset contents
- */
-server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  const url = new URL(request.params.uri);
-  const datasetId = url.pathname.replace(/^\//, '');
-  
-  try {
-    const response = await axios.get(`${ABS_API_BASE}/${datasetId}`);
-    
-    return {
-      contents: [{
-        uri: request.params.uri,
-        mimeType: "application/json",
-        text: JSON.stringify(response.data, null, 2)
-      }]
-    };
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to fetch dataset ${datasetId}: ${error.message}`);
+type ListDatasetsParams = Record<string, never>;
+
+const server = new Server(
+  {
+    name: "abs-mcp-server",
+    version: "0.1.0",
+    description: "Access Australian Bureau of Statistics (ABS) data"
+  },
+  {
+    capabilities: {
+      tools: {
+        list: true,
+        call: true
+      }
     }
-    throw error;
   }
-});
+);
 
-/**
- * Handler for listing available tools
- */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  log('Listing tools');
   return {
     tools: [
       {
         name: "query_dataset",
         description: "Query a specific ABS dataset with optional filters",
-        parameters: {
+        inputSchema: {
           type: "object",
           required: ["datasetId"],
           properties: {
             datasetId: {
               type: "string",
-              description: "ID of the dataset to query"
+              description: "ID of the dataset to query (e.g., ABS_ANNUAL_ERP_LGA2023)",
+              enum: KNOWN_DATASETS.map(d => d.id)
             },
             dimensions: {
               type: "object",
@@ -160,7 +96,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "list_datasets",
         description: "List available ABS datasets and their metadata",
-        parameters: {
+        inputSchema: {
           type: "object",
           properties: {}
         }
@@ -169,17 +105,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-/**
- * Handler for tool calls
- */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, parameters } = request.params;
+  log('Tool call:', name, parameters);
 
   switch (name) {
     case "query_dataset": {
-      const params = parameters as QueryParams;
+      const params = parameters as QueryDatasetParams;
       try {
-        const response = await axios.get(`${ABS_API_BASE}/${params.datasetId}`, {
+        const response = await axios.get(`${ABS_API_BASE}/data/${params.datasetId}/all`, {
           params: {
             format: params.format || "json",
             ...params.dimensions
@@ -195,8 +129,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     
     case "list_datasets": {
-      const datasets = await fetchDatasets();
-      return { result: datasets };
+      return { result: KNOWN_DATASETS };
     }
     
     default:
@@ -204,76 +137,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-/**
- * Handler for listing available prompts
- */
-server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  return {
-    prompts: [{
-      name: "analyze_dataset",
-      description: "Generate analysis of ABS statistical data",
-      parameters: {
-        type: "object",
-        required: ["datasetId"],
-        properties: {
-          datasetId: {
-            type: "string",
-            description: "ID of the dataset to analyze"
-          }
-        }
-      }
-    }]
-  };
-});
-
-/**
- * Handler for getting prompt details
- */
-server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-  if (request.params.name !== "analyze_dataset") {
-    throw new Error("Unknown prompt");
-  }
-
-  const params = request.params.parameters as { datasetId?: string } | undefined;
-  const datasetId = params?.datasetId;
-  if (!datasetId) {
-    throw new Error("Dataset ID is required");
-  }
-
+// Start the server
+async function main() {
+  log('Starting ABS MCP Server...');
+  
+  const transport = new StdioServerTransport();
+  
+  log('Connecting to transport...');
   try {
-    const response = await axios.get(`${ABS_API_BASE}/${datasetId}`);
-    const dataset = datasetCache[datasetId];
-
-    return {
-      prompt: {
-        text: "Analyze the following ABS statistical dataset and provide insights:",
-        embeddedResources: [{
-          uri: `abs:///${datasetId}`,
-          mimeType: "application/json",
-          text: JSON.stringify({
-            metadata: dataset,
-            data: response.data
-          }, null, 2)
-        }]
-      }
-    };
+    await server.connect(transport);
+    log('Server ready to handle requests');
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to fetch dataset for analysis: ${error.message}`);
-    }
+    log('Failed to connect:', error);
     throw error;
   }
-});
-
-/**
- * Start the server
- */
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
 }
 
+process.on('uncaughtException', (error: Error) => {
+  log('Uncaught exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (error: Error) => {
+  log('Unhandled rejection:', error);
+  process.exit(1);
+});
+
 main().catch((error) => {
-  console.error("Server error:", error);
+  log("Server error:", error);
   process.exit(1);
 });
