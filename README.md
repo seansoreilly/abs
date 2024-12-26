@@ -1,21 +1,15 @@
 # ABS MCP Server
 
-An MCP (Model Context Protocol) server that provides access to the Australian Bureau of Statistics (ABS) Data API. This server allows AI assistants to query and analyze ABS statistical data.
+An MCP (Model Context Protocol) server that provides access to the Australian Bureau of Statistics (ABS) Data API. This server allows AI assistants to query and analyze ABS statistical data through the SDMX-ML API.
 
 ## Features
 
+- Dynamic discovery of all available ABS datasets via SDMX-ML API
 - Query ABS datasets with optional filters
-- List available datasets and their metadata
-- Support for JSON and CSV response formats
+- Support for multiple data formats (JSON, CSV, XML)
 - Built on the MCP protocol for seamless integration with AI assistants
-
-## Available Datasets
-
-Currently supports the following datasets:
-
-- `ABS_ANNUAL_ERP_LGA2023`: Regional Population by Local Government Area (2023)
-- `ABS_C21_T01_LGA`: 2021 Census, Selected Person Characteristics by Local Government Area
-- `ABS_REGIONAL_ASGS2016`: Regional Statistics by Statistical Area Level 2 (SA2)
+- Caching system for improved performance
+- Comprehensive logging and error handling
 
 ## Installation
 
@@ -48,46 +42,46 @@ npm start
 - `npm start`: Run the server
 - `npm run inspector`: Run the MCP inspector for testing
 
-### For Developers
+## Project Structure
 
-#### Project Structure
+```
+src/
+├── index.ts                # Main server implementation
+├── services/
+│   └── abs/
+│       ├── ABSApiClient.ts # ABS API communication
+│       └── DataFlowService.ts # Data flow management and caching
+├── types/
+│   └── abs.ts             # TypeScript type definitions
+└── utils/
+    └── logger.ts          # Logging configuration
+```
 
-- `src/index.ts`: Main server implementation
-- `package.json`: Project configuration and dependencies
-- `tsconfig.json`: TypeScript configuration
+## Implementation Details
 
-#### Available Tools
+### ABS API Client
 
-1. `query_dataset`
-   - Purpose: Query a specific ABS dataset with optional filters
-   - Parameters:
-     - `datasetId` (required): ID of the dataset to query
-     - `dimensions` (optional): Dimension filters as key-value pairs
-     - `format` (optional): Response format ("json" or "csv")
+The `ABSApiClient` class handles communication with the ABS Data API:
+- Uses SDMX-ML format for data exchange
+- Supports multiple response formats (JSON, CSV, XML)
+- Implements proper error handling and logging
+- Configurable timeouts and retries
 
-2. `list_datasets`
-   - Purpose: List available ABS datasets and their metadata
-   - Parameters: None
+### Data Flow Service
 
-#### Adding New Datasets
+The `DataFlowService` class manages ABS data flows:
+- Dynamically fetches available datasets from ABS API
+- Implements caching with configurable refresh intervals
+- Provides methods for querying specific datasets
+- Handles data transformation and formatting
 
-To add support for new datasets:
+### Logging
 
-1. Add the dataset metadata to the `KNOWN_DATASETS` array in `src/index.ts`:
-   ```typescript
-   {
-     id: "DATASET_ID",
-     title: "Dataset Title",
-     description: "Dataset Description"
-   }
-   ```
-
-#### Error Handling
-
-The server implements comprehensive error handling:
-- API request errors are caught and formatted with descriptive messages
-- Uncaught exceptions and unhandled rejections are logged and terminate the process
-- Debug logging can be enabled/disabled via the `debug` flag
+Comprehensive logging system using Winston:
+- Debug-level logging for development
+- Structured JSON logging format
+- Console and file transport options
+- Configurable log levels and formats
 
 ## Integration with Claude Desktop
 
@@ -99,7 +93,8 @@ The server implements comprehensive error handling:
 ## API Documentation
 
 For more information about the ABS Data API:
-- [ABS Data API Documentation](https://api.data.abs.gov.au/data/help)
+- [SDMX-ML Documentation](https://data.gov.au/dataset/ds-dga-b1bc6077-dadd-4f61-9f8c-002ab2cdff10/details)
+- [ABS API Documentation](https://api.gov.au/service/f8880c48-2927-4e48-9945-46d36c8c4e11)
 
 ## Contributing
 
